@@ -1,0 +1,82 @@
+install.packages("dplyr")
+install.packages("randomForest")
+library(dplyr)
+library(randomForest)
+
+
+data <- read_csv("2025-11-MD.csv", show_col_types = FALSE)
+
+data <- data[-1, ]
+data[-1] <- lapply(data[-1], as.numeric)
+df <- na.omit(data)
+
+df_ML <- df %>% select(-sasdate)
+
+# Choisissons la variable à prédire, ici l'inflation
+
+y_var <- "CPIAUCSL"
+
+### On veut prédire y à l'horizon temporel h : y_t+h = f(x_t, x_t-1, ... , x_t-p)
+h <- 3 
+p <- 6 # nombre de lags des prédicteurs
+
+# Construction de la variable y_t+h
+df_ML$y_lead <- dplyr::lead(df_ML[[y_var]], h)
+
+# Construction des prédicteurs retardés
+# j'ai aussi crée des retards sur la variable à prédire y_var, je ne sais pas si c'est correct. 
+# Pour moi le modèle peut utiliser ces trend passées pour prédire mais peut etre que je me trompe.  
+all_vars <- setdiff(names(df_ML), "y_lead")
+for (var in all_vars) {
+  for (lag in 0:p) {
+    # création de nouvelles variables intitulées INDPRO_L1,...,_LP par exemple
+    df_ML[[paste0(var, "_L", lag)]] <- dplyr::lag(df_ML[[var]], lag)
+  }
+}
+
+# Nettoyage des données (enlever les NA et les colonnes originales)
+df_ML <- df_ML %>%
+  select(-all_of(all_vars)) %>% 
+  na.omit()   
+
+X <- df_ML %>% select(-y_lead)
+y <- df_ML$y_lead
+
+### Séparation train / test
+
+n <- nrow(df_ML)
+# On prend 80% des données pour l'entrainement
+train_size <- floor(0.8 * n)
+
+X_train <- X[1:train_size, ]
+y_train <- y[1:train_size]
+
+X_test <- X[(train_size+1):n, ]
+y_test <- y[(train_size+1):n]
+
+### Estimation du Random Forest
+library(randomForest)
+rf_model <- randomForest(
+  x = X_train,
+  y = y_train,
+  ntree = 500,                         
+  mtry = floor(sqrt(ncol(X_train))),   # nb de variables tirées au hasard pour chaque arbre
+  importance = TRUE                    
+)
+
+print(rf_model)
+
+# prévision sur l'ensemble de test
+y_pred <- predict(rf_model, X_test)
+
+## évaluation des performances en comparant y_pred et y_test
+rmse <- sqrt(mean((y_test - y_pred)^2))
+rmse # je trouve 45, cela me parait élevé
+
+r2 <- cor(y_test, y_pred)^2
+r2 # je trouve qqch proche de 0 = le modèle ne parvient pas à expliquer la variance des données de test.
+
+varImpPlot(rf_model, type = 1)
+
+
+
