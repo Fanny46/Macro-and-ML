@@ -1,8 +1,8 @@
-install.packages("dplyr")
-install.packages("randomForest")
+# install.packages("dplyr")
+# install.packages("randomForest")
 library(dplyr)
 library(randomForest)
-
+library(readr)
 
 data <- read_csv("2025-11-MD.csv", show_col_types = FALSE)
 
@@ -77,6 +77,3 @@ r2 <- cor(y_test, y_pred)^2
 r2 # je trouve qqch proche de 0 = le modèle ne parvient pas à expliquer la variance des données de test.
 
 varImpPlot(rf_model, type = 1)
-
-
-
