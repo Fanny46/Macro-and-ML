@@ -3,6 +3,7 @@
 library(dplyr)
 library(randomForest)
 library(readr)
+library(tidyr)
 
 data <- read_csv("2025-11-MD.csv", show_col_types = FALSE)
 
@@ -16,6 +17,15 @@ df_ML <- df %>% select(-sasdate)
 
 y_var <- "CPIAUCSL"
 
+# Calcul des lags et différences
+df_ML <- df_ML %>%
+  arrange(row_number()) %>%
+  mutate(
+    dCPI = .data[[y_var]] - lag(.data[[y_var]]),
+    infl = 100 * (log(.data[[y_var]]) - log(lag(.data[[y_var]])))
+  ) %>%
+  drop_na()  # retire les lignes avec NA introduites par lag
+
 ### On veut prédire y à l'horizon temporel h : y_t+h = f(x_t, x_t-1, ... , x_t-p)
 h <- 3 
 p <- 6 # nombre de lags des prédicteurs
@@ -26,9 +36,9 @@ df_ML$y_lead <- dplyr::lead(df_ML[[y_var]], h)
 # Construction des prédicteurs retardés
 # j'ai aussi crée des retards sur la variable à prédire y_var, je ne sais pas si c'est correct. 
 # Pour moi le modèle peut utiliser ces trend passées pour prédire mais peut etre que je me trompe.  
-all_vars <- setdiff(names(df_ML), "y_lead")
+all_vars <- setdiff(names(df_ML), c("y_lead", y_var))
 for (var in all_vars) {
-  for (lag in 0:p) {
+  for (lag in 1:p) {
     # création de nouvelles variables intitulées INDPRO_L1,...,_LP par exemple
     df_ML[[paste0(var, "_L", lag)]] <- dplyr::lag(df_ML[[var]], lag)
   }
