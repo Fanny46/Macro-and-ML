@@ -56,10 +56,10 @@ prepare_ml_data <- function(df, y_var, h, p) {
   df_ml <- df
   df_ml$y_lead <- dplyr::lead(df_ml[[y_var]], h)
   
-  all_vars <- setdiff(names(df_ml), "y_lead")
+  all_vars <- setdiff(names(df_ml), c("y_lead", y_var))
   
   for (var in all_vars) {
-    for (lag in 0:p) {
+    for (lag in 1:p) {
       df_ml[[paste0(var, "_L", lag)]] <- dplyr::lag(df_ml[[var]], lag)
     }
   }

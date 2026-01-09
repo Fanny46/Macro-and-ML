@@ -5,38 +5,39 @@ library(randomForest)
 library(readr)
 library(tidyr)
 
+set.seed(123)
+
 data <- read_csv("2025-11-MD.csv", show_col_types = FALSE)
 
 data <- data[-1, ]
 data[-1] <- lapply(data[-1], as.numeric)
 df <- na.omit(data)
 
-df_ML <- df %>% select(-sasdate)
-
-# Choisissons la variable à prédire, ici l'inflation
-
-y_var <- "CPIAUCSL"
+df <- df %>% select(-sasdate)
 
 # Calcul des lags et différences
-df_ML <- df_ML %>%
+df <- df %>%
   arrange(row_number()) %>%
   mutate(
-    dCPI = .data[[y_var]] - lag(.data[[y_var]]),
-    infl = 100 * (log(.data[[y_var]]) - log(lag(.data[[y_var]])))
+    dCPI = CPIAUCSL - lag(CPIAUCSL),
+    infl = 100 * (log(CPIAUCSL) - log(lag(CPIAUCSL)))
   ) %>%
-  drop_na()  # retire les lignes avec NA introduites par lag
+  na.omit()
 
 ### On veut prédire y à l'horizon temporel h : y_t+h = f(x_t, x_t-1, ... , x_t-p)
 h <- 3 
 p <- 6 # nombre de lags des prédicteurs
 
 # Construction de la variable y_t+h
-df_ML$y_lead <- dplyr::lead(df_ML[[y_var]], h)
+
+# cible = inflation future
+df_ML <- df
+df_ML$y_lead <- dplyr::lead(df_ML$infl, h)
 
 # Construction des prédicteurs retardés
 # j'ai aussi crée des retards sur la variable à prédire y_var, je ne sais pas si c'est correct. 
 # Pour moi le modèle peut utiliser ces trend passées pour prédire mais peut etre que je me trompe.  
-all_vars <- setdiff(names(df_ML), c("y_lead", y_var))
+all_vars <- setdiff(names(df_ML), c("y_lead", "infl"))
 for (var in all_vars) {
   for (lag in 1:p) {
     # création de nouvelles variables intitulées INDPRO_L1,...,_LP par exemple
@@ -77,13 +78,22 @@ rf_model <- randomForest(
 print(rf_model)
 
 # prévision sur l'ensemble de test
-y_pred <- predict(rf_model, X_test)
+infl_pred <- predict(rf_model, X_test)
+
+# Reconstruction du CPI
+CPI_last <- df$CPIAUCSL[
+  train_size + p + h
+]
+
+CPI_pred <- CPI_last * exp(cumsum(infl_pred) / 100)
+
+CPI_true <- df$CPIAUCSL[(train_size + p + h + 1):nrow(df)]
 
 ## évaluation des performances en comparant y_pred et y_test
-rmse <- sqrt(mean((y_test - y_pred)^2))
+rmse <- sqrt(mean((CPI_true - CPI_pred)^2))
 rmse # je trouve 45, cela me parait élevé
 
-r2 <- cor(y_test, y_pred)^2
+r2 <- cor(CPI_true, CPI_pred)^2
 r2 # je trouve qqch proche de 0 = le modèle ne parvient pas à expliquer la variance des données de test.
 
 varImpPlot(rf_model, type = 1)
